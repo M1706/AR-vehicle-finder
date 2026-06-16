@@ -96,7 +96,29 @@
         <button class="icon-btn" id="btn-photo-toggle" title="Show saved photo">▣</button>
       </div>
 
-      <div class="ar-stage">
+      <!-- floor-aware navigator (shown only when a level/section/pillar was saved) -->
+      <div class="floor-nav hidden" id="floor-nav">
+        <div class="floor-step" id="floor-step">
+          <div class="floor-target">
+            <span class="floor-label">Your bike is on</span>
+            <span class="floor-big" id="floor-target-big">Level —</span>
+          </div>
+          <div class="floor-move neutral" id="floor-move"></div>
+          <div class="floor-current">
+            <span>You're on level</span>
+            <input id="cur-level" class="cur-level-input" placeholder="P4" autocomplete="off" inputmode="text"/>
+          </div>
+        </div>
+
+        <div class="path-crumbs" id="path-crumbs"></div>
+
+        <button class="floor-photo hidden" id="floor-photo">
+          <img id="floor-thumb" alt="saved spot"/>
+          <span>Saved photo · tap to enlarge</span>
+        </button>
+      </div>
+
+      <div class="ar-stage" id="ar-stage">
         <div class="arrow-wrap" id="arrow-wrap">
           <svg class="ar-arrow" viewBox="0 0 100 100" id="ar-arrow">
             <defs>
@@ -110,7 +132,8 @@
         </div>
       </div>
 
-      <div class="find-readout">
+      <div class="find-readout" id="find-readout">
+        <div class="gps-cap" id="gps-cap">Rough outdoor GPS · unreliable indoors</div>
         <div class="dist" id="dist-val">— m</div>
         <div class="dir" id="dir-val">Point your phone around</div>
         <div class="acc" id="acc-val"></div>
@@ -252,6 +275,48 @@
   .toast{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);
     background:var(--card);border:1px solid var(--line);color:var(--txt);padding:11px 18px;
     border-radius:30px;font-size:14px;z-index:9;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+
+  /* floor-aware navigator (garage mode) */
+  .floor-nav{padding:8px 14px 0;display:flex;flex-direction:column;gap:10px}
+  .floor-step{background:rgba(13,17,27,.82);border:1px solid var(--line);border-radius:16px;
+    padding:14px;backdrop-filter:blur(10px);display:flex;flex-direction:column;gap:12px}
+  .floor-target{display:flex;flex-direction:column;gap:2px;text-align:center}
+  .floor-label{color:var(--mut);font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+  .floor-big{font-size:30px;font-weight:700;letter-spacing:.5px}
+  .floor-move{display:flex;align-items:center;justify-content:center;gap:9px;
+    border-radius:12px;padding:11px 12px;font-size:15px;font-weight:600;line-height:1.25;text-align:center}
+  .floor-move:empty{display:none}
+  .floor-move.same{background:rgba(55,211,155,.14);color:var(--ok);border:1px solid rgba(55,211,155,.4)}
+  .floor-move.up{background:rgba(43,183,255,.14);color:var(--acc);border:1px solid rgba(43,183,255,.4)}
+  .floor-move.down{background:rgba(255,209,102,.14);color:#ffd166;border:1px solid rgba(255,209,102,.4)}
+  .floor-move.neutral{background:var(--card2);color:#cfe3ff;border:1px solid var(--line)}
+  .fm-ico{font-size:22px;line-height:1;flex:none}
+  .floor-current{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:14px}
+  .cur-level-input{width:86px;background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:8px 10px;color:var(--txt);font-size:15px;font-family:inherit;text-align:center;outline:none;text-transform:uppercase}
+  .cur-level-input:focus{border-color:var(--acc)}
+  .cur-level-input::placeholder{color:var(--mut);text-transform:none}
+
+  .path-crumbs{display:flex;align-items:stretch;justify-content:center;gap:5px;flex-wrap:wrap}
+  .crumb{background:rgba(13,17,27,.8);border:1px solid var(--line);border-radius:12px;
+    padding:7px 13px;display:flex;flex-direction:column;align-items:center;min-width:62px;backdrop-filter:blur(8px)}
+  .crumb-k{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+  .crumb-v{font-size:18px;font-weight:700;margin-top:1px}
+  .crumb-sep{align-self:center;color:var(--mut);font-size:17px}
+
+  .floor-photo{display:flex;align-items:center;gap:10px;background:rgba(13,17,27,.8);
+    border:1px solid var(--line);border-radius:14px;padding:8px;cursor:pointer;font-family:inherit;
+    color:var(--mut);font-size:13px;text-align:left;backdrop-filter:blur(8px)}
+  .floor-photo img{width:54px;height:54px;object-fit:cover;border-radius:9px;border:1px solid var(--line);flex:none}
+
+  /* demote the GPS arrow when floor info exists */
+  .ar-stage.secondary .arrow-wrap{width:120px;height:120px}
+  .ar-stage.secondary .ar-arrow{width:78px;height:78px;opacity:.85}
+  .ar-stage.secondary .arrow-pulse{display:none}
+  .gps-cap{display:none;color:var(--mut);font-size:11px;letter-spacing:.4px;margin-bottom:3px}
+  .find-readout.secondary .gps-cap{display:block}
+  .find-readout.secondary .dist{font-size:22px;opacity:.75}
+  .find-readout.secondary .dir{font-size:13px}
 </style>
 
 <script>
@@ -315,6 +380,54 @@
     if(s.section) p.push("Sec "+s.section);
     if(s.pillar) p.push("Pillar "+s.pillar);
     return p.join(" · ");
+  }
+
+  /* ---------- floor logic ---------- */
+  // Turn a level string into a signed floor number so we can say up/down.
+  // Ground=0, basements negative (B2 -> -2), everything else uses its number (P2 -> 2, L3 -> 3).
+  function parseFloor(raw){
+    if(raw==null) return null;
+    var s=String(raw).trim().toUpperCase();
+    if(!s) return null;
+    if(/^(G|GF|GND|GROUND|0)$/.test(s)) return 0;
+    var bm=s.match(/^(?:B|LB|LG|UG|BASEMENT)\s*-?(\d+)?$/);
+    if(bm) return -(bm[1]?parseInt(bm[1],10):1);
+    var nm=s.match(/-?\d+/);
+    if(nm) return parseInt(nm[0],10);
+    return null;
+  }
+  function renderCrumbs(spot){
+    var c=$("path-crumbs"); c.innerHTML="";
+    var steps=[];
+    if(spot.level)   steps.push(["Level",   spot.level]);
+    if(spot.section) steps.push(["Section", spot.section]);
+    if(spot.pillar)  steps.push(["Pillar",  spot.pillar]);
+    if(!steps.length){ c.classList.add("hidden"); return; }
+    c.classList.remove("hidden");
+    steps.forEach(function(st,i){
+      if(i>0){ var sep=document.createElement("span"); sep.className="crumb-sep"; sep.textContent="›"; c.appendChild(sep); }
+      var b=document.createElement("div"); b.className="crumb";
+      var k=document.createElement("span"); k.className="crumb-k"; k.textContent=st[0];
+      var v=document.createElement("span"); v.className="crumb-v"; v.textContent=st[1];
+      b.appendChild(k); b.appendChild(v); c.appendChild(b);
+    });
+  }
+  function updateFloorMove(){
+    var moveEl=$("floor-move");
+    if(!moveEl || !state.spot) return;
+    function set(cls,ico,txt){
+      moveEl.className="floor-move "+cls; moveEl.innerHTML="";
+      if(ico){ var i=document.createElement("span"); i.className="fm-ico"; i.textContent=ico; moveEl.appendChild(i); }
+      var t=document.createElement("span"); t.textContent=txt; moveEl.appendChild(t);
+    }
+    var tgtName = state.spot.level ? ("Level "+state.spot.level) : "the spot";
+    var tgt=parseFloor(state.spot.level);
+    var cur=parseFloor($("cur-level").value);
+    if(tgt==null || cur==null){ set("neutral","→","Head to "+tgtName); return; }
+    var diff=tgt-cur;
+    if(diff===0) set("same","✓","You're on the right floor — find "+(state.spot.section?("Section "+state.spot.section):"your spot"));
+    else if(diff>0) set("up","↑","Go UP "+diff+" floor"+(diff>1?"s":"")+" to "+tgtName);
+    else { var n=-diff; set("down","↓","Go DOWN "+n+" floor"+(n>1?"s":"")+" to "+tgtName); }
   }
 
   /* ---------- camera ---------- */
@@ -451,8 +564,30 @@
     if(!state.spot){ renderHome(); return; }
     show("find");
     $("find-title").textContent = state.spot.label || "Find My Bike";
+
+    // Garage mode = we have human landmarks (level/section/pillar). These beat GPS indoors.
+    var garage = !!(state.spot.level || state.spot.section || state.spot.pillar);
+    var fn=$("floor-nav"), stage=$("ar-stage"), readout=$("find-readout");
+    fn.classList.toggle("hidden", !garage);
+    stage.classList.toggle("secondary", garage);
+    readout.classList.toggle("secondary", garage);
+
+    if(garage){
+      $("floor-target-big").textContent = state.spot.level ? ("Level "+state.spot.level) : "Saved spot";
+      $("floor-step").classList.toggle("hidden", !state.spot.level); // no level -> skip the up/down step
+      renderCrumbs(state.spot);
+      $("cur-level").value="";
+      updateFloorMove();
+      var fp=$("floor-photo");
+      if(state.spot.photo){ $("floor-thumb").src=state.spot.photo; fp.classList.remove("hidden"); }
+      else fp.classList.add("hidden");
+    }
+
     var n=noteStr(state.spot);
-    $("find-note").textContent = n ? ("Last stretch → "+n) : "";
+    $("find-note").textContent = garage
+      ? "Indoors GPS can't see floors — trust the level, section & photo. The arrow below is only a rough outdoor hint."
+      : (n ? ("Last stretch → "+n) : "");
+
     var modalImg=$("modal-img");
     if(state.spot.photo){ modalImg.src=state.spot.photo; $("btn-photo-toggle").style.display=""; }
     else $("btn-photo-toggle").style.display="none";
@@ -468,8 +603,8 @@
         state.curPos=p.coords; renderAR();
       },function(){},{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
     } else {
-      $("dist-val").textContent="No GPS pin";
-      $("dir-val").textContent="Use the saved photo & section note";
+      $("dist-val").textContent = garage ? "—" : "No GPS pin";
+      $("dir-val").textContent = garage ? "Use the floor & photo above" : "Use the saved photo & section note";
     }
     renderAR();
   }
@@ -513,6 +648,8 @@
   $("btn-found").addEventListener("click", function(){ closeFind(); toast("Nice — ride safe!"); renderHome(); });
   $("btn-photo-toggle").addEventListener("click", function(){ $("photo-modal").classList.remove("hidden"); });
   $("modal-close").addEventListener("click", function(){ $("photo-modal").classList.add("hidden"); });
+  $("cur-level").addEventListener("input", updateFloorMove);
+  $("floor-photo").addEventListener("click", function(){ $("photo-modal").classList.remove("hidden"); });
 
   $("btn-clear").addEventListener("click", async function(){
     await deleteSpot(); state.spot=null; toast("Saved spot cleared"); renderHome();
