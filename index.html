@@ -120,15 +120,19 @@
 
       <div class="ar-stage" id="ar-stage">
         <div class="arrow-wrap" id="arrow-wrap">
-          <svg class="ar-arrow" viewBox="0 0 100 100" id="ar-arrow">
+          <svg class="ar-path" id="ar-path" viewBox="0 0 200 260" preserveAspectRatio="xMidYMax meet">
             <defs>
-              <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="ag" x1="0" y1="1" x2="0" y2="0">
                 <stop offset="0%" stop-color="#7af0c8"/><stop offset="100%" stop-color="#2bb7ff"/>
               </linearGradient>
             </defs>
-            <path d="M50 6 L84 70 L50 54 L16 70 Z" fill="url(#ag)" stroke="rgba(255,255,255,.85)" stroke-width="2" stroke-linejoin="round"/>
+            <g id="path-g"></g>
+            <circle class="you-ring" cx="100" cy="246" r="8">
+              <animate attributeName="r" values="8;24" dur="2s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values=".7;0" dur="2s" repeatCount="indefinite"/>
+            </circle>
+            <circle class="you-dot" cx="100" cy="246" r="8"/>
           </svg>
-          <div class="arrow-pulse"></div>
         </div>
       </div>
 
@@ -246,14 +250,15 @@
   .find-fallback.show{display:block}
   .find-overlay{position:absolute;inset:0;display:flex;flex-direction:column}
   .ar-stage{flex:1;display:flex;align-items:center;justify-content:center;position:relative}
-  .arrow-wrap{position:relative;width:200px;height:200px;display:grid;place-items:center;
-    transition:transform .18s ease-out;will-change:transform}
-  .ar-arrow{width:150px;height:150px;filter:drop-shadow(0 6px 22px rgba(43,183,255,.55))}
-  .arrow-pulse{position:absolute;width:170px;height:170px;border-radius:50%;
-    border:2px solid rgba(122,240,200,.35);animation:pulse 2s ease-out infinite}
-  @keyframes pulse{0%{transform:scale(.7);opacity:.8}100%{transform:scale(1.25);opacity:0}}
-  .arrow-wrap.close .ar-arrow path{fill:var(--ok)}
-  .arrow-wrap.close .arrow-pulse{border-color:rgba(55,211,155,.6)}
+  .arrow-wrap{position:relative;width:240px;height:300px;display:grid;place-items:center}
+  .ar-path{width:100%;height:100%;overflow:visible}
+  .chev{fill:none;stroke:url(#ag);stroke-linecap:round;stroke-linejoin:round;
+    filter:drop-shadow(0 3px 8px rgba(43,183,255,.45));animation:flow 1.5s ease-in-out infinite}
+  @keyframes flow{0%,100%{opacity:.25}45%{opacity:1}}
+  .you-dot{fill:var(--acc2);stroke:#06121a;stroke-width:2}
+  .you-ring{fill:none;stroke:var(--acc2);stroke-width:2}
+  .dest{fill:none;stroke:var(--ok);stroke-width:5}
+  .dest-core{fill:var(--ok);stroke:#06121a;stroke-width:2}
 
   .find-readout{text-align:center;padding:0 18px}
   .dist{font-size:46px;font-weight:700;letter-spacing:.5px;text-shadow:0 2px 14px rgba(0,0,0,.7)}
@@ -310,9 +315,7 @@
   .floor-photo img{width:54px;height:54px;object-fit:cover;border-radius:9px;border:1px solid var(--line);flex:none}
 
   /* demote the GPS arrow when floor info exists */
-  .ar-stage.secondary .arrow-wrap{width:120px;height:120px}
-  .ar-stage.secondary .ar-arrow{width:78px;height:78px;opacity:.85}
-  .ar-stage.secondary .arrow-pulse{display:none}
+  .ar-stage.secondary .arrow-wrap{width:150px;height:190px}
   .gps-cap{display:none;color:var(--mut);font-size:11px;letter-spacing:.4px;margin-bottom:3px}
   .find-readout.secondary .gps-cap{display:block}
   .find-readout.secondary .dist{font-size:22px;opacity:.75}
@@ -428,6 +431,52 @@
     if(diff===0) set("same","✓","You're on the right floor — find "+(state.spot.section?("Section "+state.spot.section):"your spot"));
     else if(diff>0) set("up","↑","Go UP "+diff+" floor"+(diff>1?"s":"")+" to "+tgtName);
     else { var n=-diff; set("down","↓","Go DOWN "+n+" floor"+(n>1?"s":"")+" to "+tgtName); }
+  }
+
+  /* ---------- path indicator (chevron trail) ---------- */
+  var SVGNS="http://www.w3.org/2000/svg";
+  function r1(v){return Math.round(v*10)/10;}
+  function svgEl(name,attrs){
+    var e=document.createElementNS(SVGNS,name);
+    for(var k in attrs) e.setAttribute(k,attrs[k]);
+    return e;
+  }
+  function chevron(x,y,ang,size,sw){
+    var fx=Math.cos(ang), fy=Math.sin(ang), px=-Math.sin(ang), py=Math.cos(ang);
+    var ax=x+fx*size*0.5,            ay=y+fy*size*0.5;             // apex (toward destination)
+    var lx=x-fx*size*0.5+px*size*0.6, ly=y-fy*size*0.5+py*size*0.6; // back-left tail
+    var rx=x-fx*size*0.5-px*size*0.6, ry=y-fy*size*0.5-py*size*0.6; // back-right tail
+    return svgEl("path",{
+      "class":"chev",
+      "stroke-width":r1(sw),
+      d:"M"+r1(lx)+" "+r1(ly)+" L"+r1(ax)+" "+r1(ay)+" L"+r1(rx)+" "+r1(ry)
+    });
+  }
+  // rel: degrees, 0 = straight ahead, +right / -left, ±180 = behind.
+  function drawPath(rel, close){
+    var g=$("path-g"); if(!g) return;
+    g.innerHTML="";
+    if(close){
+      var ring=svgEl("circle",{cx:100,cy:150,r:14,"class":"dest"});
+      ring.appendChild(svgEl("animate",{attributeName:"r",values:"10;34",dur:"1.4s",repeatCount:"indefinite"}));
+      ring.appendChild(svgEl("animate",{attributeName:"opacity",values:"1;0",dur:"1.4s",repeatCount:"indefinite"}));
+      g.appendChild(ring);
+      g.appendChild(svgEl("circle",{cx:100,cy:150,r:10,"class":"dest-core"}));
+      return;
+    }
+    var a=Math.max(-80,Math.min(80,rel))*Math.PI/180;   // clamp so it stays on-screen
+    var bx=100, by=238, qx=100, qy=by-150, len=212;      // base = you, control straight ahead
+    var ex=100+Math.sin(a)*len*0.92, ey=by-Math.cos(a)*len;
+    ex=Math.max(20,Math.min(180,ex)); ey=Math.max(16,Math.min(by-26,ey));
+    function pt(t){var m=1-t; return [m*m*bx+2*m*t*qx+t*t*ex, m*m*by+2*m*t*qy+t*t*ey];}
+    function tan(t){return Math.atan2(2*(1-t)*(qy-by)+2*t*(ey-qy), 2*(1-t)*(qx-bx)+2*t*(ex-qx));}
+    var N=5;
+    for(var i=0;i<N;i++){
+      var t=(i+0.55)/N, p=pt(t), ang=tan(t), sc=1-t*0.55;
+      var ch=chevron(p[0],p[1],ang,30*sc,9*sc);
+      ch.style.animationDelay=(i*0.16)+"s";   // pulse travels outward = "walk this way"
+      g.appendChild(ch);
+    }
   }
 
   /* ---------- camera ---------- */
@@ -585,7 +634,7 @@
 
     var n=noteStr(state.spot);
     $("find-note").textContent = garage
-      ? "Indoors GPS can't see floors — trust the level, section & photo. The arrow below is only a rough outdoor hint."
+      ? "Indoors GPS can't see floors — trust the level, section & photo. The path below is only a rough outdoor hint."
       : (n ? ("Last stretch → "+n) : "");
 
     var modalImg=$("modal-img");
@@ -610,19 +659,18 @@
   }
   function renderAR(){
     if(!state.spot || !state.spot.lat) return;
-    var wrap=$("arrow-wrap");
     if(state.curPos){
       var d=distance(state.curPos.latitude,state.curPos.longitude,state.spot.lat,state.spot.lng);
       var brg=bearing(state.curPos.latitude,state.curPos.longitude,state.spot.lat,state.spot.lng);
       $("dist-val").textContent = (d<1000? Math.round(d)+" m" : (d/1000).toFixed(2)+" km");
       var close=d<10;
-      wrap.classList.toggle("close", close);
       if(state.heading!=null){
-        var rot=(brg - state.heading + 360)%360;
-        wrap.style.transform="rotate("+rot+"deg)";
+        var rel=((brg - state.heading + 540)%360)-180;   // -180..180, 0 = ahead
+        drawPath(rel, close);
         $("dir-val").textContent = close ? "You're here — look around!" :
-          (compass(brg)+" · turn toward the arrow");
+          (Math.abs(rel)>135 ? "Turn around — follow the path" : (compass(brg)+" · follow the path"));
       } else {
+        drawPath(0, close);
         $("dir-val").textContent = "Compass calibrating — head "+compass(brg);
       }
       var acc=state.curPos.accuracy;
